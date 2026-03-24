@@ -1,0 +1,17 @@
+# Ignore dependencies
+/__pycache__
+/venv
+/env
+*.pyc
+*.pyo
+db.sqlite3
+/media
+.env
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
