@@ -1,68 +1,77 @@
-import React, { useState } from 'react';
-import axios from 'axios';
-import FileUpload from './components/FileUpload';
-import ResultsDisplay from './components/ResultsDisplay';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import authService from './services/authService';
+import AuthPage from './components/AuthPage';
+import DashboardPage from './components/DashboardPage';
+import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
-function App() {
-  const [results, setResults] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+/**
+ * Main App component with routing
+ */
+function AppContent() {
+  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
+  const navigate = useNavigate();
 
-  const handleFileUpload = async (file) => {
-    setLoading(true);
-    setError(null);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await axios.post('/api/analyze/', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      setResults(response.data);
-    } catch (err) {
-      setError(
-        err.response?.data?.error ||
-        err.message ||
-        'An error occurred while analyzing the file'
-      );
-    } finally {
-      setLoading(false);
-    }
+  const handleAuthSuccess = () => {
+    setIsAuthenticated(true);
+    navigate('/dashboard');
   };
 
-  const handleReset = () => {
-    setResults(null);
-    setError(null);
+  const handleLogout = () => {
+    authService.logout();
+    setIsAuthenticated(false);
+    navigate('/');
   };
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>📊 Business Analytics System</h1>
-        <p>Upload your CSV data and get instant analysis</p>
-      </header>
-
-      <main className="main-content">
-        {!results ? (
-          <FileUpload onUpload={handleFileUpload} loading={loading} error={error} />
-        ) : (
-          <>
-            <ResultsDisplay results={results} />
-            <button className="reset-button" onClick={handleReset}>
-              Upload Another File
+    <>
+      {isAuthenticated && (
+        <header className="app-header">
+          <div className="header-content">
+            <h1>📊 Business Analytics System</h1>
+            <button className="logout-btn" onClick={handleLogout}>
+              Logout
             </button>
-          </>
-        )}
-      </main>
+          </div>
+        </header>
+      )}
 
-      <footer className="footer">
-        <p>© 2024 Business Analytics System. All rights reserved.</p>
-      </footer>
-    </div>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            isAuthenticated ? (
+              <AuthPage onAuthSuccess={handleAuthSuccess} />
+            ) : (
+              <AuthPage onAuthSuccess={handleAuthSuccess} />
+            )
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+
+      {isAuthenticated && (
+        <footer className="footer">
+          <p>© 2024 Business Analytics System. All rights reserved.</p>
+        </footer>
+      )}
+    </>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
   );
 }
 

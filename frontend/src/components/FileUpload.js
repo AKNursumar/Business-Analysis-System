@@ -1,8 +1,28 @@
 import React, { useState } from 'react';
 import './FileUpload.css';
 
-function FileUpload({ onUpload, loading, error }) {
+const MAX_FILE_SIZE = 5242880; // 5MB in bytes
+
+function FileUpload({ onUpload, loading, error, onFileError }) {
   const [dragActive, setDragActive] = useState(false);
+  const [sizeError, setSizeError] = useState(null);
+  
+  const validateFile = (file) => {
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      setSizeError(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds 5MB limit`);
+      if (onFileError) onFileError(`File size exceeds 5MB limit`);
+      return false;
+    }
+    // Check file type
+    if (!file.name.endsWith('.csv')) {
+      setSizeError('Please upload a CSV file');
+      if (onFileError) onFileError('Only CSV files are accepted');
+      return false;
+    }
+    setSizeError(null);
+    return true;
+  };
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -21,14 +41,18 @@ function FileUpload({ onUpload, loading, error }) {
 
     const files = e.dataTransfer.files;
     if (files && files[0]) {
-      onUpload(files[0]);
+      if (validateFile(files[0])) {
+        onUpload(files[0]);
+      }
     }
   };
 
   const handleChange = (e) => {
     const files = e.target.files;
     if (files && files[0]) {
-      onUpload(files[0]);
+      if (validateFile(files[0])) {
+        onUpload(files[0]);
+      }
     }
   };
 
@@ -59,7 +83,7 @@ function FileUpload({ onUpload, loading, error }) {
         </div>
       </div>
 
-      {error && <div className="error-message">{error}</div>}
+      {(error || sizeError) && <div className="error-message">{sizeError || error}</div>}
 
       {loading && (
         <div className="loading-message">

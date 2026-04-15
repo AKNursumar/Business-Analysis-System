@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from io import StringIO
+from io import StringIO, BytesIO
 
 
 class DataAnalysisService:
@@ -9,7 +9,7 @@ class DataAnalysisService:
     @staticmethod
     def load_dataset(file_bytes):
         """Load CSV from bytes"""
-        df = pd.read_csv(file_bytes)
+        df = pd.read_csv(BytesIO(file_bytes))
         return df
 
     @staticmethod
@@ -63,13 +63,17 @@ class DataAnalysisService:
     def numeric_summary(df):
         """Get numeric summary statistics"""
         numeric_cols = df.select_dtypes(include=np.number)
+        
+        # Validate numeric columns exist
+        if numeric_cols.empty:
+            raise ValueError("No numeric columns found in dataset. Please upload a CSV with numeric data.")
 
         summary = {
-            "mean": numeric_cols.mean().round(2).to_dict(),
-            "median": numeric_cols.median().round(2).to_dict(),
-            "min": numeric_cols.min().round(2).to_dict(),
-            "max": numeric_cols.max().round(2).to_dict(),
-            "sum": numeric_cols.sum().round(2).to_dict()
+            "mean": numeric_cols.mean().round(2).astype(float).to_dict(),
+            "median": numeric_cols.median().round(2).astype(float).to_dict(),
+            "min": numeric_cols.min().round(2).astype(float).to_dict(),
+            "max": numeric_cols.max().round(2).astype(float).to_dict(),
+            "sum": numeric_cols.sum().round(2).astype(float).to_dict()
         }
 
         return summary
@@ -99,6 +103,11 @@ class DataAnalysisService:
         try:
             # Load data
             df = DataAnalysisService.load_dataset(file_bytes)
+            
+            # Validate numeric columns exist early
+            numeric_cols = df.select_dtypes(include=np.number)
+            if numeric_cols.empty:
+                raise ValueError("No numeric columns found. Please ensure your CSV contains numeric data.")
 
             # Inspect
             inspection = DataAnalysisService.basic_inspection(df)
@@ -109,12 +118,18 @@ class DataAnalysisService:
             # Before outlier removal
             rows_before = df.shape[0]
             stats_before = DataAnalysisService.numeric_summary(df)
+            
+            # Convert NaN to None for JSON serialization
+            stats_before = {k: {col: (None if pd.isna(v) else float(v)) for col, v in vals.items()} for k, vals in stats_before.items()}
 
             # Remove outliers
             df, removed_rows = DataAnalysisService.remove_outliers_iqr(df)
 
             # After outlier removal
             stats_after = DataAnalysisService.numeric_summary(df)
+            
+            # Convert NaN to None for JSON serialization
+            stats_after = {k: {col: (None if pd.isna(v) else float(v)) for col, v in vals.items()} for k, vals in stats_after.items()}
 
             return {
                 "inspection": inspection,
