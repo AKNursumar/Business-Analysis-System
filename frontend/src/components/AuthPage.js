@@ -51,7 +51,7 @@ const AuthPage = ({ onAuthSuccess }) => {
       setSuccess('Login successful! Redirecting...');
       setTimeout(() => {
         onAuthSuccess();
-      }, 1000);
+      }, 500);
     } catch (err) {
       setError(
         typeof err === 'object' && err.detail

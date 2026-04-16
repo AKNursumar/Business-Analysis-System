@@ -5,7 +5,8 @@ from .views import (
     health_check,
     UserRegistrationView,
     analysis_history,
-    analysis_detail
+    analysis_detail,
+    generate_column_charts
 )
 
 urlpatterns = [
@@ -21,4 +22,5 @@ urlpatterns = [
     path('analyze/', analyze_file, name='analyze_file'),
     path('analyses/', analysis_history, name='analysis_history'),
     path('analyses/<int:job_id>/', analysis_detail, name='analysis_detail'),
+    path('analyses/<int:job_id>/column/<str:column_name>/charts/', generate_column_charts, name='generate_column_charts'),
 ]

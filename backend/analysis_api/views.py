@@ -56,17 +56,61 @@ def analyze_file(request):
             # Analyze
             result = DataAnalysisService.analyze_file(file_bytes)
             
+            # Generate visualizations with error handling
+            print("Generating charts...")
+            charts = {}
+            
+            print("  - Generating stats_before chart...")
+            charts['stats_before'] = DataAnalysisService.generate_stats_chart(result['stats_before'])
+            print(f"    stats_before: {'Success' if charts['stats_before'] else 'Failed/None'}")
+            
+            print("  - Generating stats_after chart...")
+            charts['stats_after'] = DataAnalysisService.generate_stats_chart(result['stats_after'])
+            print(f"    stats_after: {'Success' if charts['stats_after'] else 'Failed/None'}")
+            
+            print("  - Generating minmax_before chart...")
+            charts['minmax_before'] = DataAnalysisService.generate_minmax_chart(result['stats_before'])
+            print(f"    minmax_before: {'Success' if charts['minmax_before'] else 'Failed/None'}")
+            
+            print("  - Generating minmax_after chart...")
+            charts['minmax_after'] = DataAnalysisService.generate_minmax_chart(result['stats_after'])
+            print(f"    minmax_after: {'Success' if charts['minmax_after'] else 'Failed/None'}")
+            
+            print("  - Generating cleaning chart...")
+            charts['cleaning'] = DataAnalysisService.generate_cleaning_chart(result['cleaning_report'], result['rows_before_outlier_removal'])
+            print(f"    cleaning: {'Success' if charts['cleaning'] else 'Failed/None'}")
+            
+            print("  - Generating outlier_comparison chart...")
+            charts['outlier_comparison'] = DataAnalysisService.generate_outlier_comparison_chart(
+                result['rows_before_outlier_removal'],
+                result['rows_after_outlier_removal']
+            )
+            print(f"    outlier_comparison: {'Success' if charts['outlier_comparison'] else 'Failed/None'}")
+            
+            result['charts'] = charts
+            print("All charts generated successfully!")
+            print(f"Charts in result: {'charts' in result}")
+            print(f"Charts content keys: {result['charts'].keys() if isinstance(result.get('charts'), dict) else 'Not a dict'}")
+            print(f"Sample chart data (first 50 chars): {str(result['charts'].get('stats_before', 'N/A'))[:50]}")
+            
+            # Create a version without charts for database storage (charts are too large)
+            db_result = result.copy()
+            db_result['charts'] = {}  # Empty charts in DB to save space
+            
             # Save to database
             analysis_job = AnalysisJob.objects.create(
                 user=request.user,
                 filename=filename,
                 status='completed',
-                result_json=result
+                result_json=db_result
             )
             
-            # Return result with job ID
+            # Return result with job ID and full charts in response
             response_data = result.copy()
             response_data['job_id'] = analysis_job.id
+            
+            print(f"Response includes charts: {'charts' in response_data}")
+            print(f"Response data keys: {response_data.keys()}")
             
             return Response(response_data, status=status.HTTP_200_OK)
         except ValueError as e:
@@ -133,3 +177,53 @@ def health_check(request):
     Health check endpoint (no authentication required)
     """
     return Response({"status": "API is running"}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def generate_column_charts(request, job_id, column_name):
+    """
+    API endpoint to generate charts for a specific column
+    GET /api/analyses/{job_id}/column/{column_name}/charts/
+    """
+    try:
+        # Get the analysis job
+        analysis = AnalysisJob.objects.get(id=job_id, user=request.user)
+        
+        if analysis.status != 'completed':
+            return Response(
+                {"error": "Analysis not completed"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Extract cleaned data from result
+        cleaned_data = analysis.result_json.get('cleaned_data', [])
+        if not cleaned_data:
+            return Response(
+                {"error": "Cleaned data not available. Please re-upload the file."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        print(f"Generating column charts for job {job_id}, column {column_name}")
+        
+        # Generate the charts
+        charts = DataAnalysisService.generate_column_charts_from_data(cleaned_data, column_name)
+        
+        if 'error' in charts:
+            return Response(charts, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(charts, status=status.HTTP_200_OK)
+        
+    except AnalysisJob.DoesNotExist:
+        return Response(
+            {"error": "Analysis not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        import traceback
+        print(f"Error generating column charts: {str(e)}")
+        print(traceback.format_exc())
+        return Response(
+            {"error": f"Error generating charts: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

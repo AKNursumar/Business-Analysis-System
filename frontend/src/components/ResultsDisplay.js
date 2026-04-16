@@ -1,154 +1,77 @@
 import React, { useState } from 'react';
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
 import './ResultsDisplay.css';
 
 function ResultsDisplay({ results }) {
   const [activeTab, setActiveTab] = useState('inspection');
   const [selectedColumn, setSelectedColumn] = useState(null);
+  const [columnCharts, setColumnCharts] = useState({});
+  const [loadingCharts, setLoadingCharts] = useState(false);
+
+  // Debug: Log results to see what's being returned
+  React.useEffect(() => {
+    console.log('ResultsDisplay received:', results);
+    console.log('Charts object:', results?.charts);
+    if (results?.charts) {
+      console.log('Charts keys:', Object.keys(results.charts));
+      Object.entries(results.charts).forEach(([key, value]) => {
+        console.log(`Chart ${key}:`, value ? 'Present' : 'Missing/Null');
+      });
+    }
+  }, [results]);
 
   const formatNumber = (num) => {
     if (typeof num !== 'number') return num;
     return num.toFixed(2);
   };
 
-  // Prepare data for statistics charts
-  const prepareStatsChartData = (stats) => {
-    const columns = Object.keys(stats.mean || {});
-    return columns.map((col) => ({
-      name: col,
-      mean: stats.mean?.[col],
-      median: stats.median?.[col],
-      min: stats.min?.[col],
-      max: stats.max?.[col],
-    }));
-  };
-
-  // Prepare data for before/after comparison
-  const prepareOutlierComparisonData = () => {
-    return [
-      {
-        name: 'Rows',
-        before: results.rows_before_outlier_removal,
-        after: results.rows_after_outlier_removal,
-      },
-    ];
-  };
-
-  // Prepare data for cleaning summary pie chart
-  const prepareCleaningData = () => {
-    const data = [
-      {
-        name: 'Duplicates Removed',
-        value: results.cleaning_report.duplicates_removed,
-        color: '#FF6B6B',
-      },
-      {
-        name: 'Remaining Data',
-        value: results.rows_before_outlier_removal - results.cleaning_report.duplicates_removed,
-        color: '#4ECDC4',
-      },
-    ];
-    return data.filter((d) => d.value > 0);
-  };
-
-  // Prepare individual column data
   const getNumericColumns = () => {
     return Object.entries(results.stats_after.mean || {})
       .map(([col]) => col);
   };
 
-  const getColumnStats = (columnName, stats) => {
-    return [
-      {
-        stat: 'Mean',
-        value: stats.mean?.[columnName] || 0,
-      },
-      {
-        stat: 'Median',
-        value: stats.median?.[columnName] || 0,
-      },
-      {
-        stat: 'Min',
-        value: stats.min?.[columnName] || 0,
-      },
-      {
-        stat: 'Max',
-        value: stats.max?.[columnName] || 0,
-      },
-    ];
+  const fetchColumnCharts = async (column) => {
+    if (columnCharts[column]) {
+      // Charts already loaded for this column
+      return;
+    }
+
+    setLoadingCharts(true);
+    try {
+      const jobId = results.job_id;
+      const response = await fetch(
+        `/api/analyses/${jobId}/column/${encodeURIComponent(column)}/charts/`,
+        {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setColumnCharts(prev => ({ ...prev, [column]: data }));
+        console.log(`Column charts for ${column}:`, data);
+      } else {
+        console.error('Error fetching column charts:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching column charts:', error);
+    } finally {
+      setLoadingCharts(false);
+    }
+  };
+
+  const handleColumnSelect = (column) => {
+    setSelectedColumn(column);
+    fetchColumnCharts(column);
   };
 
   const numericColumns = getNumericColumns();
 
-  const renderStatistics = (stats) => {
-    const chartData = prepareStatsChartData(stats);
-    return (
-      <div>
-        {/* Chart Visualization */}
-        <div className="chart-container">
-          <h4>📊 Mean vs Median by Column</h4>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="mean" fill="#667eea" name="Mean" />
-              <Bar dataKey="median" fill="#764ba2" name="Median" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Range Chart (Min-Max) */}
-        <div className="chart-container">
-          <h4>📈 Min-Max Range by Column</h4>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="min" stroke="#FF6B6B" name="Min" />
-              <Line type="monotone" dataKey="max" stroke="#51CF66" name="Max" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Table View */}
-        <div className="stats-grid">
-          {Object.entries(stats).map(([statType, values]) => (
-            <div key={statType} className="stat-section">
-              <h4>{statType.charAt(0).toUpperCase() + statType.slice(1)}</h4>
-              <div className="stat-values">
-                {Object.entries(values).map(([column, value]) => (
-                  <div key={column} className="stat-item">
-                    <span className="stat-label">{column}</span>
-                    <span className="stat-value">{formatNumber(value)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  // Initialize selectedColumn if not set
+  if (!selectedColumn && numericColumns.length > 0) {
+    selectedColumn === null && numericColumns.length > 0 && setSelectedColumn(numericColumns[0]);
+  }
 
   return (
     <div className="results-container">
@@ -289,29 +212,23 @@ function ResultsDisplay({ results }) {
           <div className="content-section">
             <h3>Data Cleaning Report</h3>
             
-            {/* Cleaning Summary Chart */}
-            <div className="chart-container">
-              <h4>🧹 Cleaning Summary</h4>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={prepareCleaningData()}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, value }) => `${name}: ${value}`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {prepareCleaningData().map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            {/* Cleaning Summary Pie Chart */}
+            {results.charts?.cleaning ? (
+              <div className="chart-container">
+                <h4>🧹 Cleaning Summary</h4>
+                <img 
+                  src={results.charts.cleaning} 
+                  alt="Cleaning Summary" 
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => console.error('Chart image failed to load:', e)}
+                />
+              </div>
+            ) : (
+              <div className="chart-container">
+                <h4>🧹 Cleaning Summary</h4>
+                <p style={{ color: '#666' }}>Chart not available</p>
+              </div>
+            )}
 
             {/* Text Report */}
             <div className="cleaning-report">
@@ -357,7 +274,58 @@ function ResultsDisplay({ results }) {
         {activeTab === 'before' && (
           <div className="content-section">
             <h3>Statistics Before Outlier Removal</h3>
-            {renderStatistics(results.stats_before)}
+            
+            {/* Stats Before Charts */}
+            {results.charts?.stats_before ? (
+              <div className="chart-container">
+                <h4>📊 Mean vs Median by Column</h4>
+                <img 
+                  src={results.charts.stats_before} 
+                  alt="Mean vs Median" 
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => console.error('Chart image failed to load:', e)}
+                />
+              </div>
+            ) : (
+              <div className="chart-container">
+                <h4>📊 Mean vs Median by Column</h4>
+                <p style={{ color: '#999' }}>Chart not generated</p>
+              </div>
+            )}
+
+            {results.charts?.minmax_before ? (
+              <div className="chart-container">
+                <h4>📈 Min-Max Range by Column</h4>
+                <img 
+                  src={results.charts.minmax_before} 
+                  alt="Min-Max Range" 
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => console.error('Chart image failed to load:', e)}
+                />
+              </div>
+            ) : (
+              <div className="chart-container">
+                <h4>📈 Min-Max Range by Column</h4>
+                <p style={{ color: '#999' }}>Chart not generated</p>
+              </div>
+            )}
+
+            {/* Table View */}
+            <div className="stats-grid">
+              {Object.entries(results.stats_before).map(([statType, values]) => (
+                <div key={statType} className="stat-section">
+                  <h4>{statType.charAt(0).toUpperCase() + statType.slice(1)}</h4>
+                  <div className="stat-values">
+                    {Object.entries(values).map(([column, value]) => (
+                      <div key={column} className="stat-item">
+                        <span className="stat-label">{column}</span>
+                        <span className="stat-value">{formatNumber(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -366,28 +334,79 @@ function ResultsDisplay({ results }) {
             <h3>Statistics After Outlier Removal</h3>
             
             {/* Before/After Comparison Chart */}
-            <div className="chart-container">
-              <h4>📊 Data Volume Before & After Outlier Removal</h4>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={prepareOutlierComparisonData()}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="before" fill="#FF6B6B" name="Before Removal" />
-                  <Bar dataKey="after" fill="#51CF66" name="After Removal" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            {results.charts?.outlier_comparison ? (
+              <div className="chart-container">
+                <h4>📊 Data Volume Before & After Outlier Removal</h4>
+                <img 
+                  src={results.charts.outlier_comparison} 
+                  alt="Outlier Comparison" 
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => console.error('Chart image failed to load:', e)}
+                />
+              </div>
+            ) : (
+              <div className="chart-container">
+                <h4>📊 Data Volume Before & After Outlier Removal</h4>
+                <p style={{ color: '#999' }}>Chart not generated</p>
+              </div>
+            )}
 
             {/* Statistics Note */}
             <div className="stats-note">
               <strong>📌 Summary:</strong> {results.outliers_removed} outliers were removed using the IQR method
             </div>
             
-            {/* Statistics */}
-            {renderStatistics(results.stats_after)}
+            {/* Stats After Charts */}
+            {results.charts?.stats_after ? (
+              <div className="chart-container">
+                <h4>📊 Mean vs Median by Column</h4>
+                <img 
+                  src={results.charts.stats_after} 
+                  alt="Mean vs Median" 
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => console.error('Chart image failed to load:', e)}
+                />
+              </div>
+            ) : (
+              <div className="chart-container">
+                <h4>📊 Mean vs Median by Column</h4>
+                <p style={{ color: '#999' }}>Chart not generated</p>
+              </div>
+            )}
+
+            {results.charts?.minmax_after ? (
+              <div className="chart-container">
+                <h4>📈 Min-Max Range by Column</h4>
+                <img 
+                  src={results.charts.minmax_after} 
+                  alt="Min-Max Range" 
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => console.error('Chart image failed to load:', e)}
+                />
+              </div>
+            ) : (
+              <div className="chart-container">
+                <h4>📈 Min-Max Range by Column</h4>
+                <p style={{ color: '#999' }}>Chart not generated</p>
+              </div>
+            )}
+
+            {/* Table View */}
+            <div className="stats-grid">
+              {Object.entries(results.stats_after).map(([statType, values]) => (
+                <div key={statType} className="stat-section">
+                  <h4>{statType.charAt(0).toUpperCase() + statType.slice(1)}</h4>
+                  <div className="stat-values">
+                    {Object.entries(values).map(([column, value]) => (
+                      <div key={column} className="stat-item">
+                        <span className="stat-label">{column}</span>
+                        <span className="stat-value">{formatNumber(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -403,7 +422,7 @@ function ResultsDisplay({ results }) {
                   <button
                     key={col}
                     className={`column-btn ${selectedColumn === col ? 'active' : ''}`}
-                    onClick={() => setSelectedColumn(col)}
+                    onClick={() => handleColumnSelect(col)}
                   >
                     {col}
                   </button>
@@ -413,20 +432,6 @@ function ResultsDisplay({ results }) {
 
             {selectedColumn && (
               <div>
-                {/* Column Statistics Chart */}
-                <div className="chart-container">
-                  <h4>📈 Statistics for "{selectedColumn}"</h4>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={getColumnStats(selectedColumn, results.stats_after)}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="stat" />
-                      <YAxis />
-                      <Tooltip formatter={(value) => formatNumber(value)} />
-                      <Bar dataKey="value" fill="#667eea" name="Value" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
                 {/* Column Details Card */}
                 <div className="column-details">
                   <div className="details-grid">
@@ -462,33 +467,53 @@ function ResultsDisplay({ results }) {
                   </div>
                 </div>
 
-                {/* Before/After Comparison for Column */}
-                <div className="chart-container">
-                  <h4>📊 Before/After Outlier Removal - {selectedColumn}</h4>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart
-                      data={[
-                        {
-                          label: selectedColumn,
-                          Mean_Before: results.stats_before?.mean?.[selectedColumn] || 0,
-                          Mean_After: results.stats_after?.mean?.[selectedColumn] || 0,
-                          Median_Before: results.stats_before?.median?.[selectedColumn] || 0,
-                          Median_After: results.stats_after?.median?.[selectedColumn] || 0,
-                        },
-                      ]}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="label" />
-                      <YAxis />
-                      <Tooltip formatter={(value) => formatNumber(value)} />
-                      <Legend />
-                      <Bar dataKey="Mean_Before" fill="#FF6B6B" name="Mean (Before)" />
-                      <Bar dataKey="Mean_After" fill="#51CF66" name="Mean (After)" />
-                      <Bar dataKey="Median_Before" fill="#FFA500" name="Median (Before)" />
-                      <Bar dataKey="Median_After" fill="#4ECDC4" name="Median (After)" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                {/* Loading indicator */}
+                {loadingCharts && (
+                  <div className="chart-container">
+                    <p style={{ textAlign: 'center', color: '#666' }}>Loading charts for {selectedColumn}...</p>
+                  </div>
+                )}
+
+                {/* Column-specific charts */}
+                {columnCharts[selectedColumn] && (
+                  <>
+                    {columnCharts[selectedColumn].distribution && (
+                      <div className="chart-container">
+                        <h4>📊 Distribution of {selectedColumn}</h4>
+                        <img 
+                          src={columnCharts[selectedColumn].distribution} 
+                          alt="Distribution" 
+                          style={{ maxWidth: '100%', height: 'auto' }}
+                          onError={(e) => console.error('Distribution chart failed to load:', e)}
+                        />
+                      </div>
+                    )}
+
+                    {columnCharts[selectedColumn].kde && (
+                      <div className="chart-container">
+                        <h4>📈 Density Plot of {selectedColumn}</h4>
+                        <img 
+                          src={columnCharts[selectedColumn].kde} 
+                          alt="KDE" 
+                          style={{ maxWidth: '100%', height: 'auto' }}
+                          onError={(e) => console.error('KDE chart failed to load:', e)}
+                        />
+                      </div>
+                    )}
+
+                    {columnCharts[selectedColumn].boxplot && (
+                      <div className="chart-container">
+                        <h4>📦 Box Plot of {selectedColumn}</h4>
+                        <img 
+                          src={columnCharts[selectedColumn].boxplot} 
+                          alt="Box Plot" 
+                          style={{ maxWidth: '100%', height: 'auto' }}
+                          onError={(e) => console.error('Box plot failed to load:', e)}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>

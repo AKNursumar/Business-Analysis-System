@@ -29,7 +29,7 @@ function AppContent() {
       {isAuthenticated && (
         <header className="app-header">
           <div className="header-content">
-            <h1>📊 Business Analytics System</h1>
+            <h1>Business Analytics System</h1>
             <button className="logout-btn" onClick={handleLogout}>
               Logout
             </button>
@@ -60,7 +60,7 @@ function AppContent() {
 
       {isAuthenticated && (
         <footer className="footer">
-          <p>© 2024 Business Analytics System. All rights reserved.</p>
+          <p>© 2026 Business Analytics System. All rights reserved.</p>
         </footer>
       )}
     </>
@@ -69,7 +69,7 @@ function AppContent() {
 
 function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AppContent />
     </Router>
   );
